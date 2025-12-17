@@ -254,6 +254,9 @@ export default function HomePage() {
           <Link className="underline hover:text-white transition" href="/up-next">
             Up Next
           </Link>
+		  <Link className="underline hover:text-white transition" href="/stats">
+			Stats
+			</Link>
           <Link className="underline hover:text-white transition" href="/admin">
             Admin
           </Link>
@@ -306,7 +309,15 @@ export default function HomePage() {
                   {current.title}
                 </div>
                 <div className="text-slate-400">{current.author}</div>
-
+  const curAgg = reviewAgg[current.id] ?? { avg: null as number | null, count: 0 };
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <Pill tone="cyan">⭐ {curAgg.avg == null ? "—" : curAgg.avg.toFixed(1)}</Pill>
+      <Pill>
+        {curAgg.count} review{curAgg.count === 1 ? "" : "s"}
+      </Pill>
+    </div>
+  );
                 <div className="mt-2 flex items-center gap-2">
                   <Pill tone="cyan">
                     ⭐ {reviewAgg[current.id]?.avg != null ? reviewAgg[current.id]!.avg.toFixed(1) : "—"}
