@@ -16,7 +16,6 @@ type Profile = {
 };
 
 function highlightMentions(text: string) {
-  // Splits into tokens, wraps @mentions with a pill
   const parts = text.split(/(@[\w-]+)/g);
   return (
     <>
@@ -25,7 +24,16 @@ function highlightMentions(text: string) {
           return (
             <span
               key={i}
-              className="inline-flex items-center rounded-full border px-2 py-0.5 text-sm bg-gray-50"
+              className="
+                inline-flex items-center
+                rounded-full
+                border border-cyan-500/40
+                bg-slate-950
+                px-2 py-0.5
+                text-sm
+                text-cyan-200
+                shadow-[0_0_12px_rgba(34,211,238,0.25)]
+              "
             >
               {p}
             </span>
@@ -37,11 +45,11 @@ function highlightMentions(text: string) {
   );
 }
 
+
 export default function ReviewDetailPage() {
   const { id } = useParams<{ id: string }>();
 
   const [me, setMe] = useState<{ id: string; email: string } | null>(null);
-
   const [review, setReview] = useState<any>(null);
   const [book, setBook] = useState<any>(null);
 
@@ -150,16 +158,12 @@ export default function ReviewDetailPage() {
       return;
     }
 
-    // Extract @mentions by display_name and write to comment_mentions
     const mentionedNames = Array.from(
       new Set(body.match(/@([\w-]+)/g)?.map((m) => m.slice(1).toLowerCase()) ?? [])
     );
 
     if (mentionedNames.length) {
-      const targets = profiles.filter((p) =>
-        mentionedNames.includes(p.display_name.toLowerCase())
-      );
-
+      const targets = profiles.filter((p) => mentionedNames.includes(p.display_name.toLowerCase()));
       for (const t of targets) {
         await supabase.from("comment_mentions").insert({
           comment_id: inserted.data.id,
@@ -174,53 +178,68 @@ export default function ReviewDetailPage() {
 
   if (!review || !book) {
     return (
-      <main className="p-6 max-w-3xl mx-auto bg-white text-gray-900 min-h-screen">
-        <div className="text-gray-600">Loading…</div>
-        {msg && <div className="mt-3 text-sm text-red-600">{msg}</div>}
+      <main className="p-6 max-w-3xl mx-auto">
+        <div className="text-slate-400">Loading…</div>
+        {msg && <div className="mt-3 text-sm text-red-400">{msg}</div>}
       </main>
     );
   }
 
   return (
-    <main className="p-6 max-w-3xl mx-auto bg-white text-gray-900 min-h-screen">
-      <Link href={`/book/${book.id}`} className="text-sm underline text-gray-600">
+    <main className="p-6 max-w-3xl mx-auto">
+      <Link href={`/book/${book.id}`} className="text-sm underline text-slate-300">
         ← Back to book
       </Link>
 
-      <div className="mt-5 flex gap-4">
-        <div className="w-24 aspect-[2/3] rounded-2xl overflow-hidden border bg-gray-50">
-          {book.cover_url ? (
-            <img src={book.cover_url} alt={book.title} className="h-full w-full object-cover" />
-          ) : null}
+      <div className="mt-6 flex gap-5">
+        <div className="w-28 aspect-[2/3] rounded-2xl overflow-hidden border border-slate-800 bg-slate-900 shadow-sm">
+          {book.cover_url ? <img src={book.cover_url} alt={book.title} className="h-full w-full object-cover" /> : null}
         </div>
 
         <div className="flex-1">
-          <div className="text-sm text-gray-600">{book.author}</div>
-          <h1 className="text-3xl font-semibold">{book.title}</h1>
+          <div className="text-slate-400">{book.author}</div>
+          <h1 className="text-4xl font-semibold tracking-tight">{book.title}</h1>
 
-          <div className="mt-2 text-sm text-gray-700 flex items-center gap-3">
+          <div className="mt-3 text-slate-300 flex items-center gap-3">
             <span>
-              Review by{" "}
-              <span className="font-medium">{review.profiles?.display_name ?? "someone"}</span>
+              Review by <span className="text-slate-100 font-medium">{review.profiles?.display_name ?? "someone"}</span>
             </span>
-            {review.rating ? <span className="text-yellow-600">{Array(review.rating).fill("★").join("")}</span> : null}
+            {review.rating ? (
+              <span className="text-yellow-400">{Array(review.rating).fill("★").join("")}</span>
+            ) : null}
           </div>
         </div>
       </div>
 
-      <section className="mt-6 rounded-2xl border p-4 bg-white">
-        <div className="text-gray-900 whitespace-pre-wrap leading-relaxed">
+      <section className="
+		  mt-7
+		  rounded-2xl
+		  border border-slate-800
+		  bg-slate-900
+		  p-5
+		  shadow-[0_0_40px_rgba(0,0,0,0.35)]
+	">
+        <div className="text-slate-100 whitespace-pre-wrap leading-relaxed">
           {highlightMentions(review.thoughts ?? "")}
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2 text-sm">
+        <div className="mt-5 flex flex-wrap gap-2 text-sm">
           {(["Like", "Helpful", "Funny"] as const).map((t) => (
             <button
               key={t}
               onClick={() => toggleReaction(t)}
-              className={`rounded-xl border px-3 py-1 bg-white hover:shadow-sm transition ${
-                iReacted(t) ? "bg-black text-white border-black" : "text-gray-900"
-              }`}
+              className={`
+				  rounded-xl
+				  border
+				  px-3 py-1.5
+				  transition
+				  ${
+					iReacted(t)
+					  ? "bg-slate-100 text-slate-950 shadow-[0_0_20px_rgba(255,255,255,0.25)]"
+					  : "bg-slate-950 text-slate-100 border-slate-700 hover:border-slate-500 hover:shadow-[0_0_20px_rgba(255,255,255,0.15)]"
+				  }
+				`}
+
             >
               {t === "Like" ? "👍" : t === "Helpful" ? "✅" : "😂"} {t} · {counts[t]}
             </button>
@@ -228,26 +247,44 @@ export default function ReviewDetailPage() {
         </div>
       </section>
 
-      <section className="mt-8">
+      <section className="mt-10">
         <h2 className="text-xl font-semibold">Comments</h2>
 
         <div className="mt-4 space-y-3">
           {comments.map((c) => (
-            <div key={c.id} className="rounded-2xl border p-4 bg-white">
-              <div className="text-sm text-gray-600">
-                <span className="font-medium text-gray-900">{c.profiles?.display_name ?? "someone"}</span>
+            <div
+			  key={c.id}
+			  className="
+				rounded-2xl
+				border border-slate-800
+				bg-slate-900
+				p-4
+				shadow-[0_0_30px_rgba(0,0,0,0.35)]
+				hover:shadow-[0_0_45px_rgba(0,0,0,0.55)]
+				transition
+			  "
+			>
+
+              <div className="text-sm text-slate-400">
+                <span className="font-medium text-slate-100">{c.profiles?.display_name ?? "someone"}</span>
               </div>
-              <div className="mt-2 whitespace-pre-wrap leading-relaxed">
+              <div className="mt-2 whitespace-pre-wrap leading-relaxed text-slate-100">
                 {highlightMentions(c.body ?? "")}
               </div>
             </div>
           ))}
         </div>
 
-        <div className="mt-5 rounded-2xl border p-4 bg-white">
-          <div className="font-medium">Add a comment</div>
+		<div className="
+		  mt-5
+		  rounded-2xl
+		  border border-slate-800
+		  bg-slate-900
+		  p-5
+		  shadow-[0_0_40px_rgba(0,0,0,0.35)]
+		">
+          <div className="font-medium text-slate-100">Add a comment</div>
 
-          {/* Single comment box (autocomplete mentions) */}
           <div className="mt-3">
             <MentionInput
               value={commentBody}
@@ -259,12 +296,12 @@ export default function ReviewDetailPage() {
 
           <button
             onClick={addComment}
-            className="mt-3 rounded-xl bg-black text-white px-4 py-2"
+            className="mt-3 rounded-xl bg-slate-100 text-slate-950 px-4 py-2 font-medium hover:bg-white transition"
           >
             Post comment
           </button>
 
-          {msg && <div className="mt-3 text-sm text-red-600">{msg}</div>}
+          {msg && <div className="mt-3 text-sm text-red-400">{msg}</div>}
         </div>
       </section>
     </main>
