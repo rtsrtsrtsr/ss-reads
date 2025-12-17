@@ -116,10 +116,10 @@ export default function HomePage() {
     }
 
     const list = (b.data ?? []) as any as Book[];
-    const cur = list.find((x) => x.status === "Current") ?? null;
-    const rest = list.filter((x) => x.status !== "Current");
-    setCurrent(cur);
-    setBooks(rest);
+	const cur = list.find((x) => x.status === "Current") ?? null;
+	setCurrent(cur);
+	setBooks(list); // include Current in Bookshelf
+
 
     const p = await supabase
       .from("book_proposals")
