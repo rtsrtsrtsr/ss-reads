@@ -6,7 +6,6 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Header from "@/app/ui/Header";
 
-
 type SortMode = "newest" | "most_read" | "highest_rated";
 
 type Book = {
@@ -18,18 +17,10 @@ type Book = {
   date_added?: string | null;
 };
 
-type ReviewAgg = {
-  count: number;
-  avg: number | null;
-};
+type ReviewAgg = { count: number; avg: number | null };
 
-// Reading status — reusing your existing table
 type ReadingStatusValue = "In" | "Reading" | "Finished" | "Out";
-
-type ReadingRow = {
-  user_id: string;
-  status: string; // keep loose in case old values exist
-};
+type ReadingRow = { user_id: string; status: string };
 
 function GlowCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
@@ -78,7 +69,6 @@ export default function HomePage() {
   const [reviewAgg, setReviewAgg] = useState<Record<string, ReviewAgg>>({});
   const [sortMode, setSortMode] = useState<SortMode>("newest");
 
-  // ReadingStatus state (reused)
   const [inCount, setInCount] = useState(0);
   const [myStatus, setMyStatus] = useState<ReadingStatusValue>("Out");
 
@@ -112,8 +102,10 @@ export default function HomePage() {
   }, [books, reviewAgg, sortMode]);
 
   async function loadReadingStatusForCurrent(curBookId: string, userId?: string) {
-    // Pull all statuses for the current book (so we can count "In")
-    const rs = await supabase.from("reading_statuses").select("user_id,status").eq("book_id", curBookId);
+    const rs = await supabase
+      .from("reading_statuses")
+      .select("user_id,status")
+      .eq("book_id", curBookId);
 
     if (rs.error) {
       setInCount(0);
@@ -122,8 +114,6 @@ export default function HomePage() {
     }
 
     const rows = (rs.data ?? []) as ReadingRow[];
-
-    // Count only people who are explicitly "In"
     setInCount(rows.filter((r) => r.status === "In").length);
 
     if (!userId) {
@@ -133,8 +123,6 @@ export default function HomePage() {
 
     const mine = rows.find((r) => r.user_id === userId);
     const val = (mine?.status ?? "Out") as ReadingStatusValue;
-
-    // guard: if something older/weird exists, treat as Out
     const allowed: ReadingStatusValue[] = ["In", "Reading", "Finished", "Out"];
     setMyStatus(allowed.includes(val) ? val : "Out");
   }
@@ -142,7 +130,6 @@ export default function HomePage() {
   async function updateMyStatus(next: ReadingStatusValue) {
     if (!me || !current) return;
 
-    // Upsert into the SAME table the Book page uses
     const up = await supabase
       .from("reading_statuses")
       .upsert(
@@ -169,7 +156,6 @@ export default function HomePage() {
 
     const { data: sess } = await supabase.auth.getSession();
     const user = sess.session?.user;
-
     if (user?.id && user.email) setMe({ id: user.id, email: user.email });
     else setMe(null);
 
@@ -186,7 +172,7 @@ export default function HomePage() {
     const cur = list.find((x) => x.status === "Current") ?? null;
     setCurrent(cur);
 
-    // Reviews → agg
+    // review aggregates
     if (list.length) {
       const r = await supabase
         .from("reviews")
@@ -199,7 +185,7 @@ export default function HomePage() {
       if (!r.error) {
         const tmp: Record<string, { sum: number; count: number }> = {};
         for (const row of r.data ?? []) {
-          const bid = row.book_id;
+          const bid = row.book_id as string;
           if (!tmp[bid]) tmp[bid] = { sum: 0, count: 0 };
           if (typeof row.rating === "number") {
             tmp[bid].sum += row.rating;
@@ -216,10 +202,8 @@ export default function HomePage() {
       }
     }
 
-    // ReadingStatus for Current book
-    if (cur) {
-      await loadReadingStatusForCurrent(cur.id, user?.id);
-    } else {
+    if (cur) await loadReadingStatusForCurrent(cur.id, user?.id);
+    else {
       setInCount(0);
       setMyStatus("Out");
     }
@@ -230,145 +214,165 @@ export default function HomePage() {
   }, []);
 
   return (
-	<>
-	<Header />
-    <main className="p-6 max-w-6xl mx-auto">
+    <>
+      <Header />
 
-      {msg && <div className="mt-4 text-sm text-red-400">{msg}</div>}
+      <main className="p-6 max-w-6xl mx-auto">
+        {msg && <div className="mt-4 text-sm text-red-400">{msg}</div>}
 
-      {/* Current */}
-      <section className="mt-8">
-        <GlowCard className="p-6">
-          <div className="flex items-center justify-between">
-            <Pill tone="cyan">Current</Pill>
-            {current && (
-              <Link href={`/book/${current.id}`} className="underline text-sm text-slate-300 hover:text-white transition">
-                Open →
-              </Link>
+        {/* Current */}
+        <section className="mt-6">
+          <GlowCard className="p-6">
+            <div className="flex items-center justify-between">
+              <Pill tone="cyan">Current</Pill>
+              {current ? (
+                <Link
+                  href={`/book/${current.id}`}
+                  className="text-sm underline text-slate-300 hover:text-white transition"
+                >
+                  Open →
+                </Link>
+              ) : null}
+            </div>
+
+            {!current ? (
+              <div className="mt-4 text-slate-400">No current book.</div>
+            ) : (
+              (() => {
+                const agg = reviewAgg[current.id] ?? { avg: null, count: 0 };
+
+                return (
+                  <div className="mt-6 flex flex-wrap gap-4 items-center">
+                    <div className="w-20 aspect-[2/3] rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 shadow-[0_0_25px_rgba(0,0,0,0.45)]">
+                      {current.cover_url ? (
+                        <img
+                          src={current.cover_url}
+                          alt={current.title}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : null}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xl font-semibold truncate">{current.title}</div>
+                      <div className="text-slate-400 truncate">{current.author}</div>
+
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Pill tone="cyan">⭐ {agg.avg == null ? "—" : agg.avg.toFixed(1)}</Pill>
+                        <Pill>
+                          {agg.count} review{agg.count === 1 ? "" : "s"}
+                        </Pill>
+                        <Pill tone="cyan">👥 {inCount} in</Pill>
+
+                        {me ? (
+                          <div className="ml-auto flex items-center gap-2">
+                            <span className="text-sm text-slate-400">Your status:</span>
+                            <select
+                              className="rounded-xl border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2"
+                              value={myStatus}
+                              onChange={(e) => updateMyStatus(e.target.value as ReadingStatusValue)}
+                            >
+                              <option value="In">In</option>
+                              <option value="Reading">Reading</option>
+                              <option value="Finished">Finished</option>
+                              <option value="Out">Out</option>
+                            </select>
+                          </div>
+                        ) : (
+                          <Link
+                            href="/login"
+                            className="ml-auto text-sm underline text-slate-300 hover:text-white transition"
+                          >
+                            Log in to set status →
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()
             )}
+          </GlowCard>
+        </section>
+
+        {/* Bookshelf */}
+        <section className="mt-10">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-semibold tracking-tight flex items-center gap-2">
+                <span className="text-cyan-200">▦</span> Bookshelf
+              </h2>
+              <div className="text-sm text-slate-400">current + past reads</div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-400">Sort:</span>
+              <select
+                className="rounded-xl border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2"
+                value={sortMode}
+                onChange={(e) => setSortMode(e.target.value as SortMode)}
+              >
+                <option value="newest">Newest First</option>
+                <option value="most_read">Most Read</option>
+                <option value="highest_rated">Highest Rated</option>
+              </select>
+            </div>
           </div>
 
-          {!current ? (
-            <div className="mt-4 text-slate-400">No current book.</div>
-          ) : (
-            (() => {
-              const agg = reviewAgg[current.id] ?? { avg: null, count: 0 };
+          <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {booksSorted.map((b) => {
+              const agg = reviewAgg[b.id] ?? { avg: null, count: 0 };
 
               return (
-                <div className="mt-6 flex flex-wrap gap-4 items-center">
-                  <div className="w-20 aspect-[2/3] rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 shadow-[0_0_25px_rgba(0,0,0,0.45)]">
-                    {current.cover_url ? (
-                      <img src={current.cover_url} alt={current.title} className="h-full w-full object-cover" />
-                    ) : null}
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xl font-semibold truncate">{current.title}</div>
-                    <div className="text-slate-400 truncate">{current.author}</div>
-
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <Pill tone="cyan">⭐ {agg.avg == null ? "—" : agg.avg.toFixed(1)}</Pill>
-                      <Pill>
-                        {agg.count} review{agg.count === 1 ? "" : "s"}
-                      </Pill>
-                      <Pill tone="cyan">👥 {inCount} in</Pill>
-
-                      {/* Status picker (reuses ReadingStatus) */}
-                      {me ? (
-                        <div className="ml-auto flex items-center gap-2">
-                          <span className="text-sm text-slate-400">Your status:</span>
-                          <select
-                            className="rounded-xl border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2"
-                            value={myStatus}
-                            onChange={(e) => updateMyStatus(e.target.value as ReadingStatusValue)}
-                          >
-                            <option value="In">In</option>
-                            <option value="Reading">Reading</option>
-                            <option value="Finished">Finished</option>
-                            <option value="Out">Out</option>
-                          </select>
-                        </div>
+                <Link key={b.id} href={`/book/${b.id}`} className="group">
+                  <div
+                    className={[
+                      "rounded-3xl border border-slate-800 bg-slate-900/60 backdrop-blur p-3",
+                      "shadow-[0_0_30px_rgba(0,0,0,0.35)] hover:shadow-[0_0_45px_rgba(34,211,238,0.18)] transition",
+                    ].join(" ")}
+                  >
+                    <div className="relative aspect-[2/3] rounded-2xl overflow-hidden border border-slate-800 bg-slate-950">
+                      {b.cover_url ? (
+                        <img
+                          src={b.cover_url}
+                          alt={b.title}
+                          className="h-full w-full object-cover group-hover:scale-[1.02] transition"
+                        />
                       ) : (
-                        <Link
-                          href="/login"
-                          className="ml-auto text-sm underline text-slate-300 hover:text-white transition"
-                        >
-                          Log in to set status →
-                        </Link>
+                        <div className="h-full w-full grid place-items-center text-xs text-slate-500">
+                          No cover
+                        </div>
                       )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })()
-          )}
-        </GlowCard>
-      </section>
 
-      {/* Bookshelf */}
-      <section className="mt-10">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-xl font-semibold">Bookshelf</h2>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-400">Sort:</span>
-            <select
-              className="rounded-xl border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2"
-              value={sortMode}
-              onChange={(e) => setSortMode(e.target.value as SortMode)}
-            >
-              <option value="newest">Newest First</option>
-              <option value="most_read">Most Read</option>
-              <option value="highest_rated">Highest Rated</option>
-            </select>
-          </div>
-        </div>
+                      {b.status === "Current" ? (
+                        <div className="absolute top-2 left-2">
+                          <Pill tone="cyan">Current</Pill>
+                        </div>
+                      ) : null}
 
-        <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          {booksSorted.map((b) => {
-            const agg = reviewAgg[b.id] ?? { avg: null, count: 0 };
-
-            return (
-              <Link key={b.id} href={`/book/${b.id}`} className="group">
-                <div
-                  className={[
-                    "rounded-3xl border border-slate-800 bg-slate-900/60 backdrop-blur p-3",
-                    "shadow-[0_0_30px_rgba(0,0,0,0.35)] hover:shadow-[0_0_45px_rgba(34,211,238,0.18)] transition",
-                  ].join(" ")}
-                >
-                  <div className="relative aspect-[2/3] rounded-2xl overflow-hidden border border-slate-800 bg-slate-950">
-                    {b.cover_url ? (
-                      <img src={b.cover_url} alt={b.title} className="h-full w-full object-cover group-hover:scale-[1.02] transition" />
-                    ) : (
-                      <div className="h-full w-full grid place-items-center text-xs text-slate-500">No cover</div>
-                    )}
-
-                    {b.status === "Current" ? (
-                      <div className="absolute top-2 left-2">
-                        <Pill tone="cyan">Current</Pill>
+                      <div className="absolute left-2 right-2 bottom-2 flex gap-2">
+                        <span className="rounded-full border border-slate-700 bg-slate-950/90 px-2 py-0.5 text-xs text-slate-200">
+                          ⭐ {agg.avg == null ? "—" : agg.avg.toFixed(1)}
+                        </span>
+                        <span className="rounded-full border border-slate-700 bg-slate-950/90 px-2 py-0.5 text-xs text-slate-200">
+                          {agg.count} review{agg.count === 1 ? "" : "s"}
+                        </span>
                       </div>
-                    ) : null}
+                    </div>
 
-                    <div className="absolute left-2 right-2 bottom-2 flex gap-2">
-                      <span className="rounded-full border border-slate-700 bg-slate-950/90 px-2 py-0.5 text-xs text-slate-200">
-                        ⭐ {agg.avg == null ? "—" : agg.avg.toFixed(1)}
-                      </span>
-                      <span className="rounded-full border border-slate-700 bg-slate-950/90 px-2 py-0.5 text-xs text-slate-200">
-                        {agg.count} review{agg.count === 1 ? "" : "s"}
-                      </span>
+                    <div className="mt-3">
+                      <div className="font-medium text-slate-100 truncate group-hover:text-white transition">
+                        {b.title}
+                      </div>
+                      <div className="text-sm text-slate-400 truncate">{b.author}</div>
                     </div>
                   </div>
-
-                  <div className="mt-3">
-                    <div className="font-medium text-slate-100 truncate group-hover:text-white transition">{b.title}</div>
-                    <div className="text-sm text-slate-400 truncate">{b.author}</div>
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      </section>
-    </main>
-	</>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      </main>
+    </>
   );
 }
