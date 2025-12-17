@@ -36,7 +36,7 @@ export default function HomeFeed() {
       const { data: allBooks, error } = await supabase
         .from("books")
         .select("id,title,author,cover_url,status,date_added")
-        .neq("status", "Archived")
+        .in("status", ["Read", "Current"])
         .order("date_added", { ascending: false });
 
       if (error) {

@@ -25,7 +25,7 @@ export default function ClientBookshelf() {
       const { data: books, error } = await supabase
         .from("books")
         .select("*")
-        .neq("status", "Archived")
+        .in("status", ["Read", "Current"])
         .order("date_added", { ascending: false });
 
       if (error) {

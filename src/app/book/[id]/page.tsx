@@ -37,6 +37,41 @@ type ReadingRow = {
   profiles?: { display_name: string } | null;
 };
 
+function StarPicker({
+  value,
+  onChange,
+}: {
+  value: number | "";
+  onChange: (v: number | "") => void;
+}) {
+  const v = value === "" ? 0 : value;
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => onChange(n)}
+            className="px-0.5 text-2xl leading-none hover:scale-110 transition"
+            aria-label={`${n} stars`}
+          >
+            <span className={n <= v ? "text-yellow-500" : "text-gray-300"}>★</span>
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange("")}
+        className="text-sm text-gray-500 underline"
+      >
+        clear
+      </button>
+    </div>
+  );
+}
+
+
 export default function BookPage() {
   const { id } = useParams<{ id: string }>();
 
@@ -342,24 +377,14 @@ export default function BookPage() {
       <section className="mt-8 rounded-2xl border p-4">
         <h2 className="font-semibold">{myReviewId ? "Edit your review" : "Add your review"}</h2>
 
-        <div className="mt-3 flex items-center gap-2">
-          <span className="text-sm text-gray-600">Rating (optional):</span>
-          <select
-            className="rounded-xl border px-2 py-1"
-            value={myRating}
-            onChange={(e) => setMyRating(e.target.value === "" ? "" : Number(e.target.value))}
-          >
-            <option value="">—</option>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </div>
+		<div className="mt-3 flex items-center gap-3">
+		  <span className="text-sm text-gray-600">Rating (optional):</span>
+		  <StarPicker value={myRating} onChange={setMyRating} />
+		</div>
+
 
         <textarea
-          className="mt-3 w-full rounded-xl border p-3"
+          className="mt-3 w-full rounded-xl border p-3 bg-white text-gray-900 placeholder:text-gray-400"
           rows={4}
           placeholder="Thoughts…"
           value={myThoughts}
@@ -414,7 +439,7 @@ export default function BookPage() {
                     <div className="text-sm text-gray-600">{stars}</div>
                   </div>
 
-                  <p className="mt-2 text-gray-800 line-clamp-2">{r.thoughts}</p>
+				<p className="mt-2 text-gray-900 leading-relaxed line-clamp-2">{r.thoughts}</p>
 
                   <div className="mt-3 text-sm text-gray-600 flex flex-wrap gap-4">
                     <span>💬 {c.comments}</span>

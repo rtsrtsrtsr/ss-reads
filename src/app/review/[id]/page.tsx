@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import MentionInput from "@/app/ui/MentionInput";
+
 
 type ReactionType = "Like" | "Helpful" | "Funny";
 
@@ -20,7 +22,6 @@ export default function ReviewDetailPage() {
   const [profiles, setProfiles] = useState<any[]>([]);
 
   const [commentBody, setCommentBody] = useState("");
-  const [mentionEmails, setMentionEmails] = useState<string>(""); // comma-separated
   const [msg, setMsg] = useState("");
 
   async function load() {
@@ -121,22 +122,26 @@ export default function ReviewDetailPage() {
       return;
     }
 
-    // Mentions: comma-separated emails → create mention rows (creates notifications via DB trigger)
-    const emails = mentionEmails
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-      .filter((e) => e.endsWith("@sourcingsprints.com"));
+	// Extract @mentions from comment body
+	const mentionedNames = Array.from(
+	  new Set(
+		commentBody.match(/@([\w-]+)/g)?.map((m) => m.slice(1).toLowerCase()) ?? []
+	  )
+	);
 
-    if (emails.length) {
-      const targets = profiles.filter((p) => emails.includes(p.email.toLowerCase()));
-      for (const t of targets) {
-        await supabase.from("comment_mentions").insert({
-          comment_id: inserted.data.id,
-          mentioned_user_id: t.id,
-        });
-      }
-    }
+	if (mentionedNames.length) {
+	  const targets = profiles.filter((p) =>
+		mentionedNames.includes(p.display_name.toLowerCase())
+	  );
+
+	  for (const t of targets) {
+		await supabase.from("comment_mentions").insert({
+		  comment_id: inserted.data.id,
+		  mentioned_user_id: t.id,
+		});
+	  }
+	}
+
 
     setCommentBody("");
     setMentionEmails("");
@@ -201,12 +206,13 @@ export default function ReviewDetailPage() {
             value={commentBody}
             onChange={(e) => setCommentBody(e.target.value)}
           />
-          <input
-            className="mt-2 w-full rounded-xl border px-3 py-2 text-sm"
-            placeholder="Mention emails (comma-separated), optional"
-            value={mentionEmails}
-            onChange={(e) => setMentionEmails(e.target.value)}
-          />
+			<MentionInput
+			  value={commentBody}
+			  onChange={setCommentBody}
+			  profiles={profiles}
+			  placeholder="Reply… use @ to mention"
+			/>
+
           <button onClick={addComment} className="mt-3 rounded-xl bg-black text-white px-4 py-2">
             Post comment
           </button>
