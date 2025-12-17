@@ -319,19 +319,21 @@ export default function HomePage() {
                 ) : null}
               </div>
 
-              <div className="min-w-0">
-                <div className="text-xl font-semibold tracking-tight group-hover:text-white transition">
-                  {current.title}
-                </div>
-                <div className="text-slate-400">{current.author}</div>
-                <div className="mt-2 flex items-center gap-2">
-                  <Pill tone="cyan">
-                    ⭐ {reviewAgg[current.id]?.avg != null ? reviewAgg[current.id]!.avg.toFixed(1) : "—"}
-                  </Pill>
-                  <Pill>
-                    {reviewAgg[current.id]?.count ?? 0} review{(reviewAgg[current.id]?.count ?? 0) === 1 ? "" : "s"}
-                  </Pill>
-                </div>
+			{(() => {
+			  const agg = reviewAgg[current.id];
+			  const avgText = agg?.avg == null ? "—" : agg.avg.toFixed(1);
+			  const count = agg?.count ?? 0;
+
+			  return (
+				<div className="mt-2 flex items-center gap-2">
+				  <Pill tone="cyan">⭐ {avgText}</Pill>
+				  <Pill>
+					{count} review{count === 1 ? "" : "s"}
+				  </Pill>
+				</div>
+			  );
+			})()}
+
               </div>
             </Link>
           )}
