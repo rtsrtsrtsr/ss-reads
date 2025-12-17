@@ -107,27 +107,10 @@ export default function StatsPage() {
   const teamAvgText = useMemo(() => (teamAvg == null ? "—" : teamAvg.toFixed(2)), [teamAvg]);
 
   return (
+	<>
+	<Header />
     <main className="p-6 max-w-6xl mx-auto">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <div className="text-2xl font-semibold tracking-tight">Stats</div>
-          <div className="text-sm text-slate-400">fun little team leaderboards</div>
-        </div>
-        <nav className="text-sm text-slate-300 flex flex-wrap items-center gap-4">
-          <Link className="underline hover:text-white transition" href="/">
-            Bookshelf
-          </Link>
-          <Link className="underline hover:text-white transition" href="/up-next">
-            Up Next
-          </Link>
-          <Link className="underline hover:text-white transition" href="/inbox">
-            Inbox
-          </Link>
-          <Link className="underline hover:text-white transition" href="/admin">
-            Admin
-          </Link>
-        </nav>
-      </header>
+
 
       {msg && <div className="mt-4 text-sm text-red-400">{msg}</div>}
 
@@ -221,5 +204,6 @@ export default function StatsPage() {
         </GlowCard>
       </section>
     </main>
+	</>
   );
 }

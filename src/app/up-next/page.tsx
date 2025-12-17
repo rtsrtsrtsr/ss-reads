@@ -202,31 +202,10 @@ export default function UpNextPage() {
   }
 
   return (
+	<>
+	<Header />
     <main className="p-6 max-w-6xl mx-auto">
-      {/* Header */}
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-2xl bg-slate-900 border border-slate-800 shadow-[0_0_20px_rgba(34,211,238,0.12)] grid place-items-center">
-            <span className="text-cyan-200">⏭</span>
-          </div>
-          <div>
-            <div className="text-2xl font-semibold tracking-tight">Up Next</div>
-            <div className="text-sm text-slate-400">propose + vote on the next book</div>
-          </div>
-        </div>
 
-        <nav className="text-sm text-slate-300 flex flex-wrap items-center gap-4">
-          <Link className="underline hover:text-white transition" href="/">
-            Bookshelf
-          </Link>
-          <Link className="underline hover:text-white transition" href="/inbox">
-            Inbox
-          </Link>
-          <Link className="underline hover:text-white transition" href="/admin">
-            Admin
-          </Link>
-        </nav>
-      </header>
 
       {msg && <div className="mt-4 text-sm text-red-400">{msg}</div>}
 
@@ -408,5 +387,6 @@ export default function UpNextPage() {
         </div>
       </section>
     </main>
+	</>
   );
 }

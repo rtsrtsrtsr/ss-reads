@@ -299,17 +299,10 @@ export default function BookPage() {
   }
 
   return (
+	<>
+	<Header />
     <main className="p-6 max-w-4xl mx-auto">
-      <header className="flex items-center justify-between gap-4">
-        <Link href="/" className="text-sm underline text-slate-300">
-          ← Back
-        </Link>
-        <nav className="text-sm text-slate-300 space-x-4">
-          <a className="underline" href="/up-next">Up Next</a>
-          <a className="underline" href="/inbox">Inbox</a>
-          <a className="underline" href="/admin">Admin</a>
-        </nav>
-      </header>
+
 
       <section className="mt-6 flex gap-5">
         <div className="w-32 shrink-0 aspect-[2/3] rounded-2xl overflow-hidden border border-slate-800 bg-slate-900 shadow-[0_0_40px_rgba(0,0,0,0.35)]">
@@ -465,5 +458,6 @@ export default function BookPage() {
         </div>
       </section>
     </main>
+	</>
   );
 }

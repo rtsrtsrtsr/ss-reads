@@ -47,14 +47,10 @@ export default function InboxPage() {
   }
 
   return (
+	<>
+	<Header />
     <main className="p-6 max-w-3xl mx-auto">
-      <header className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold">📥 Inbox</h1>
-        <nav className="text-sm text-gray-600 space-x-4">
-          <a className="underline" href="/">Bookshelf</a>
-          <button className="underline" onClick={markAllRead}>Mark all read</button>
-        </nav>
-      </header>
+
 
       {msg && <div className="mt-3 text-sm text-red-600">{msg}</div>}
 
@@ -81,5 +77,6 @@ export default function InboxPage() {
         )}
       </div>
     </main>
+	</>
   );
 }

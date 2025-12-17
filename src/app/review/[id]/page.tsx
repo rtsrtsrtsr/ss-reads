@@ -186,6 +186,8 @@ export default function ReviewDetailPage() {
   }
 
   return (
+	<>
+	<Header />
     <main className="p-6 max-w-3xl mx-auto">
       <Link href={`/book/${book.id}`} className="text-sm underline text-slate-300">
         ← Back to book
@@ -305,5 +307,6 @@ export default function ReviewDetailPage() {
         </div>
       </section>
     </main>
+	</>
   );
 }
