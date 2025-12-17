@@ -5,14 +5,17 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+type SortMode = "newest" | "most_read" | "highest_rated";
+
 type Book = {
   id: string;
   title: string;
   author: string;
   cover_url: string | null;
   status: "Read" | "Current" | "Archived";
+  // may or may not exist in your DB; we handle safely
+  date_added?: string | null;
 };
-
 
 type Proposal = {
   id: string;
@@ -61,22 +64,37 @@ function Pill({
       ? "border-cyan-500/40 text-cyan-200 shadow-[0_0_12px_rgba(34,211,238,0.18)]"
       : "border-slate-700 text-slate-200";
   return (
-    <span className={`inline-flex items-center rounded-full border bg-slate-950 px-2 py-0.5 text-xs ${cls}`}>
+    <span
+      className={`inline-flex items-center rounded-full border bg-slate-950 px-2 py-0.5 text-xs ${cls}`}
+    >
       {children}
     </span>
   );
 }
 
+function safeDateMs(s?: string | null) {
+  if (!s) return 0;
+  const t = new Date(s).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
 export default function HomePage() {
   const [me, setMe] = useState<{ id: string; email: string } | null>(null);
 
-  const [books, setBooks] = useState<Book[]>([]);
+  const [booksRaw, setBooksRaw] = useState<Book[]>([]);
   const [current, setCurrent] = useState<Book | null>(null);
 
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [votes, setVotes] = useState<Vote[]>([]);
 
   const [msg, setMsg] = useState("");
+
+  const [sortMode, setSortMode] = useState<SortMode>("newest");
+
+  // review aggregates per book
+  const [reviewAgg, setReviewAgg] = useState<
+    Record<string, { count: number; avg: number | null }>
+  >({});
 
   const voteCounts = useMemo(() => {
     const map: Record<string, number> = {};
@@ -95,6 +113,100 @@ export default function HomePage() {
       .slice(0, 3);
   }, [proposals, voteCounts]);
 
+  const booksSorted = useMemo(() => {
+    const list = [...booksRaw];
+
+    if (sortMode === "most_read") {
+      list.sort((a, b) => {
+        const ca = reviewAgg[a.id]?.count ?? 0;
+        const cb = reviewAgg[b.id]?.count ?? 0;
+        if (cb !== ca) return cb - ca;
+        // tie-break: newest
+        return safeDateMs(b.date_added) - safeDateMs(a.date_added);
+      });
+      return list;
+    }
+
+    if (sortMode === "highest_rated") {
+      list.sort((a, b) => {
+        const aa = reviewAgg[a.id]?.avg ?? -1;
+        const bb = reviewAgg[b.id]?.avg ?? -1;
+        if (bb !== aa) return bb - aa;
+        // tie-break: more reviews
+        const ca = reviewAgg[a.id]?.count ?? 0;
+        const cb = reviewAgg[b.id]?.count ?? 0;
+        if (cb !== ca) return cb - ca;
+        // tie-break: newest
+        return safeDateMs(b.date_added) - safeDateMs(a.date_added);
+      });
+      return list;
+    }
+
+    // default newest
+    list.sort((a, b) => safeDateMs(b.date_added) - safeDateMs(a.date_added));
+    return list;
+  }, [booksRaw, reviewAgg, sortMode]);
+
+  async function loadBooks() {
+    // We *try* to select date_added (common), but if your DB doesn't have it,
+    // we retry without it to avoid breaking the page.
+    const attempt = await supabase
+      .from("books")
+      .select("id,title,author,cover_url,status,date_added")
+      .in("status", ["Current", "Read"]);
+
+    if (!attempt.error) {
+      return (attempt.data ?? []) as any as Book[];
+    }
+
+    // fallback
+    const fallback = await supabase
+      .from("books")
+      .select("id,title,author,cover_url,status")
+      .in("status", ["Current", "Read"]);
+
+    if (fallback.error) throw new Error(fallback.error.message);
+    return (fallback.data ?? []) as any as Book[];
+  }
+
+  async function loadReviewAgg(bookIds: string[]) {
+    if (!bookIds.length) {
+      setReviewAgg({});
+      return;
+    }
+
+    // Pull ratings; compute avg + counts on client (simple + reliable)
+    const r = await supabase
+      .from("reviews")
+      .select("book_id,rating")
+      .in("book_id", bookIds);
+
+    if (r.error) {
+      // Don’t hard-fail the whole home page if reviews query fails
+      setReviewAgg({});
+      return;
+    }
+
+    const map: Record<string, { count: number; sum: number; ratedCount: number }> = {};
+    for (const row of (r.data ?? []) as any[]) {
+      const bid = row.book_id as string;
+      if (!map[bid]) map[bid] = { count: 0, sum: 0, ratedCount: 0 };
+      map[bid].count += 1;
+      if (typeof row.rating === "number") {
+        map[bid].sum += row.rating;
+        map[bid].ratedCount += 1;
+      }
+    }
+
+    const out: Record<string, { count: number; avg: number | null }> = {};
+    for (const bid of bookIds) {
+      const m = map[bid];
+      if (!m) out[bid] = { count: 0, avg: null };
+      else out[bid] = { count: m.count, avg: m.ratedCount ? m.sum / m.ratedCount : null };
+    }
+    setReviewAgg(out);
+  }
+
   async function load() {
     setMsg("");
 
@@ -103,29 +215,24 @@ export default function HomePage() {
     if (user?.id && user.email) setMe({ id: user.id, email: user.email });
     else setMe(null);
 
-    // Bookshelf should only be Current + Read
-    const b = await supabase
-      .from("books")
-      .select("id,title,author,cover_url,status")
-      .in("status", ["Current", "Read"])
-      .order("status", { ascending: true }); // Current often sorts before Read depending on DB; we'll handle anyway
+    try {
+      const list = await loadBooks();
 
-    if (b.error) {
-      setMsg(`Could not load books: ${b.error.message}`);
+      // feature current, but ALSO keep it in bookshelf list (as you wanted)
+      const cur = list.find((x) => x.status === "Current") ?? null;
+      setCurrent(cur);
+      setBooksRaw(list);
+
+      await loadReviewAgg(list.map((b) => b.id));
+    } catch (e: any) {
+      setMsg(`Could not load books: ${e?.message ?? String(e)}`);
       return;
     }
-
-    const list = (b.data ?? []) as any as Book[];
-	const cur = list.find((x) => x.status === "Current") ?? null;
-	setCurrent(cur);
-	setBooks(list); // include Current in Bookshelf
-
 
     const p = await supabase
       .from("book_proposals")
       .select("id,title,author,cover_url,created_at,is_active")
       .eq("is_active", true);
-
     if (!p.error) setProposals((p.data ?? []) as any);
 
     const v = await supabase.from("book_votes").select("id,proposal_id,user_id");
@@ -150,8 +257,8 @@ export default function HomePage() {
             <span className="text-cyan-200">📚</span>
           </div>
           <div>
-            <div className="text-2xl font-semibold tracking-tight">Sourcing Sprints Reads</div>
-            <div className="text-sm text-slate-400">ratings & reviews from the team</div>
+            <div className="text-2xl font-semibold tracking-tight">SourceSprints Reads</div>
+            <div className="text-sm text-slate-400">cute little internal bookshelf</div>
           </div>
         </Link>
 
@@ -193,7 +300,10 @@ export default function HomePage() {
               <span className="text-slate-400 text-sm">what we’re reading now</span>
             </div>
             {current ? (
-              <Link href={`/book/${current.id}`} className="text-sm underline text-slate-300 hover:text-white transition">
+              <Link
+                href={`/book/${current.id}`}
+                className="text-sm underline text-slate-300 hover:text-white transition"
+              >
                 Open →
               </Link>
             ) : null}
@@ -202,10 +312,7 @@ export default function HomePage() {
           {!current ? (
             <div className="mt-6 text-slate-400">No current book set.</div>
           ) : (
-            <Link
-              href={`/book/${current.id}`}
-              className="mt-6 flex gap-4 items-center group"
-            >
+            <Link href={`/book/${current.id}`} className="mt-6 flex gap-4 items-center group">
               <div className="w-20 aspect-[2/3] rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 shadow-[0_0_25px_rgba(0,0,0,0.45)] group-hover:shadow-[0_0_35px_rgba(34,211,238,0.15)] transition">
                 {current.cover_url ? (
                   <img src={current.cover_url} alt={current.title} className="h-full w-full object-cover" />
@@ -217,8 +324,13 @@ export default function HomePage() {
                   {current.title}
                 </div>
                 <div className="text-slate-400">{current.author}</div>
-                <div className="mt-2 text-sm text-slate-300">
-                  Click to see reviews and add yours ✨
+                <div className="mt-2 flex items-center gap-2">
+                  <Pill tone="cyan">
+                    ⭐ {reviewAgg[current.id]?.avg != null ? reviewAgg[current.id]!.avg.toFixed(1) : "—"}
+                  </Pill>
+                  <Pill>
+                    {reviewAgg[current.id]?.count ?? 0} review{(reviewAgg[current.id]?.count ?? 0) === 1 ? "" : "s"}
+                  </Pill>
                 </div>
               </div>
             </Link>
@@ -260,55 +372,86 @@ export default function HomePage() {
         </GlowCard>
       </section>
 
-      {/* Bookshelf */}
+      {/* Bookshelf + Sort */}
       <section className="mt-10">
-        <div className="flex items-baseline justify-between">
-          <h2 className="text-xl font-semibold tracking-tight flex items-center gap-2">
-            <span className="text-cyan-200">▦</span> Bookshelf
-          </h2>
-          <div className="text-sm text-slate-400">past reads (and current lives above)</div>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight flex items-center gap-2">
+              <span className="text-cyan-200">▦</span> Bookshelf
+            </h2>
+            <div className="text-sm text-slate-400">current + past reads</div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-slate-400">Sort:</span>
+            <select
+              className="rounded-xl border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2"
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as SortMode)}
+            >
+              <option value="newest">Newest First</option>
+              <option value="most_read">Most Read</option>
+              <option value="highest_rated">Highest Rated</option>
+            </select>
+          </div>
         </div>
 
         <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          {books.map((b) => (
-            <Link key={b.id} href={`/book/${b.id}`} className="group">
-              <div
-                className="
-                  rounded-3xl border border-slate-800 bg-slate-900/60 backdrop-blur
-                  p-3
-                  shadow-[0_0_30px_rgba(0,0,0,0.35)]
-                  hover:shadow-[0_0_45px_rgba(34,211,238,0.18)]
-                  transition
-                "
-              >
-                <div className="rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 aspect-[2/3]">
-                  {b.cover_url ? (
-                    <img
-                      src={b.cover_url}
-                      alt={b.title}
-                      className="h-full w-full object-cover group-hover:scale-[1.02] transition"
-                    />
-                  ) : (
-                    <div className="h-full w-full grid place-items-center text-xs text-slate-500">
-                      No cover
-                    </div>
-                  )}
-                </div>
+          {booksSorted.map((b) => {
+            const agg = reviewAgg[b.id] ?? { count: 0, avg: null };
+            return (
+              <Link key={b.id} href={`/book/${b.id}`} className="group">
+                <div
+                  className="
+                    rounded-3xl border border-slate-800 bg-slate-900/60 backdrop-blur
+                    p-3
+                    shadow-[0_0_30px_rgba(0,0,0,0.35)]
+                    hover:shadow-[0_0_45px_rgba(34,211,238,0.18)]
+                    transition
+                  "
+                >
+                  <div className="relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 aspect-[2/3]">
+                    {b.cover_url ? (
+                      <img
+                        src={b.cover_url}
+                        alt={b.title}
+                        className="h-full w-full object-cover group-hover:scale-[1.02] transition"
+                      />
+                    ) : (
+                      <div className="h-full w-full grid place-items-center text-xs text-slate-500">No cover</div>
+                    )}
 
-                <div className="mt-3">
-                  <div className="font-medium text-slate-100 truncate group-hover:text-white transition">
-                    {b.title}
+                    {/* top-left badge */}
+                    {b.status === "Current" ? (
+                      <div className="absolute top-2 left-2">
+                        <Pill tone="cyan">Current</Pill>
+                      </div>
+                    ) : null}
+
+                    {/* bottom overlay stats */}
+                    <div className="absolute left-2 right-2 bottom-2 flex gap-2">
+                      <span className="rounded-full border border-slate-700 bg-slate-950/90 px-2 py-0.5 text-xs text-slate-200">
+                        ⭐ {agg.avg != null ? agg.avg.toFixed(1) : "—"}
+                      </span>
+                      <span className="rounded-full border border-slate-700 bg-slate-950/90 px-2 py-0.5 text-xs text-slate-200">
+                        {agg.count} review{agg.count === 1 ? "" : "s"}
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-sm text-slate-400 truncate">{b.author}</div>
+
+                  <div className="mt-3">
+                    <div className="font-medium text-slate-100 truncate group-hover:text-white transition">
+                      {b.title}
+                    </div>
+                    <div className="text-sm text-slate-400 truncate">{b.author}</div>
+                  </div>
                 </div>
-              </div>
-            </Link>
-          ))}
+              </Link>
+            );
+          })}
         </div>
 
-        {books.length === 0 ? (
-          <div className="mt-5 text-slate-400">No past books yet.</div>
-        ) : null}
+        {booksSorted.length === 0 ? <div className="mt-5 text-slate-400">No books yet.</div> : null}
       </section>
     </main>
   );
