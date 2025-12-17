@@ -144,7 +144,6 @@ export default function ReviewDetailPage() {
 
 
     setCommentBody("");
-    setMentionEmails("");
     load();
   }
 
