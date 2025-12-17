@@ -4,6 +4,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import Header from "@/app/ui/Header";
+
 
 type BookStatus = "Current" | "Read" | "Archived";
 
@@ -204,24 +206,8 @@ export default function AdminPage() {
   }
 
   return (
+	<Header />
     <main className="p-6 max-w-6xl mx-auto">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <div className="text-2xl font-semibold tracking-tight">Admin</div>
-          <div className="text-sm text-slate-400">manage books (Current / Read / Archived)</div>
-        </div>
-        <nav className="text-sm text-slate-300 flex flex-wrap gap-4">
-          <Link className="underline hover:text-white transition" href="/">
-            Home
-          </Link>
-          <Link className="underline hover:text-white transition" href="/up-next">
-            Up Next
-          </Link>
-          <Link className="underline hover:text-white transition" href="/inbox">
-            Inbox
-          </Link>
-        </nav>
-      </header>
 
       {msg && <div className="mt-4 text-sm text-red-400">{msg}</div>}
 

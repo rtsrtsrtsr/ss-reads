@@ -4,8 +4,6 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import Header from "@/app/ui/Header";
-
 
 type SortMode = "newest" | "most_read" | "highest_rated";
 
@@ -113,7 +111,7 @@ export default function HomePage() {
 
   async function loadReadingStatusForCurrent(curBookId: string, userId?: string) {
     // Pull all statuses for the current book (so we can count "In")
-    const rs = await supabase.from("reading_statuses").select("user_id,status").eq("book_id", curBookId);
+    const rs = await supabase.from("ReadingStatus").select("user_id,status").eq("book_id", curBookId);
 
     if (rs.error) {
       setInCount(0);
@@ -144,7 +142,7 @@ export default function HomePage() {
 
     // Upsert into the SAME table the Book page uses
     const up = await supabase
-      .from("reading_statuses")
+      .from("ReadingStatus")
       .upsert(
         {
           book_id: current.id,
@@ -230,8 +228,22 @@ export default function HomePage() {
   }, []);
 
   return (
-	<Header />
     <main className="p-6 max-w-6xl mx-auto">
+      {/* Header */}
+      <header className="flex items-center justify-between gap-4">
+        <div>
+          <div className="text-2xl font-semibold">SourceSprints Reads</div>
+          <div className="text-sm text-slate-400">internal bookshelf</div>
+        </div>
+        <nav className="flex gap-4 text-sm text-slate-300">
+          <Link href="/up-next" className="underline hover:text-white">
+            Up Next
+          </Link>
+          <Link href="/stats" className="underline hover:text-white">
+            Stats
+          </Link>
+        </nav>
+      </header>
 
       {msg && <div className="mt-4 text-sm text-red-400">{msg}</div>}
 
