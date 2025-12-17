@@ -11,8 +11,8 @@ type Book = {
   author: string;
   cover_url: string | null;
   status: "Read" | "Current" | "Archived";
-  created_at?: string;
 };
+
 
 type Proposal = {
   id: string;
@@ -106,7 +106,7 @@ export default function HomePage() {
     // Bookshelf should only be Current + Read
     const b = await supabase
       .from("books")
-      .select("id,title,author,cover_url,status,created_at")
+      .select("id,title,author,cover_url,status")
       .in("status", ["Current", "Read"])
       .order("status", { ascending: true }); // Current often sorts before Read depending on DB; we'll handle anyway
 
@@ -150,8 +150,8 @@ export default function HomePage() {
             <span className="text-cyan-200">📚</span>
           </div>
           <div>
-            <div className="text-2xl font-semibold tracking-tight">SourceSprints Reads</div>
-            <div className="text-sm text-slate-400">cute little internal bookshelf</div>
+            <div className="text-2xl font-semibold tracking-tight">Sourcing Sprints Reads</div>
+            <div className="text-sm text-slate-400">ratings & reviews from the team</div>
           </div>
         </Link>
 
