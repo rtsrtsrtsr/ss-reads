@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import Header from "@/app/ui/Header";
 import MentionInput from "@/app/ui/MentionInput";
 
 type ReactionType = "Like" | "Helpful" | "Funny";

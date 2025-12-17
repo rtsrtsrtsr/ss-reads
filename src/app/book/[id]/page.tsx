@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import Header from "@/app/ui/Header";
+
 
 type BookStatus = "Read" | "Current" | "Archived";
 type ReadingStatus = "In" | "Reading" | "Finished" | "NotThisTime";

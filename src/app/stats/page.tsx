@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import Header from "@/app/ui/Header";
+
 
 function GlowCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (

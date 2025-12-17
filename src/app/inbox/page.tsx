@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Header from "@/app/ui/Header";
+
 import { supabase } from "@/lib/supabase";
 
 export default function InboxPage() {
