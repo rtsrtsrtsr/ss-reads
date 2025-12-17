@@ -1,5 +1,3 @@
-/* eslint-disable @next/next/no-img-element */
-
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -174,4 +172,94 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="p-6 max-w-5xl mx-aut
+    <main className="p-6 max-w-5xl mx-auto">
+      <header className="flex items-baseline justify-between">
+        <h1 className="text-2xl font-semibold">Admin</h1>
+        <nav className="text-sm text-gray-600 space-x-4">
+          <a className="underline" href="/">Bookshelf</a>
+        </nav>
+      </header>
+
+      <section className="mt-6 rounded-2xl border p-5">
+        <h2 className="font-semibold">Add a book</h2>
+
+        <form onSubmit={addBook} className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <input
+            className="rounded-xl border px-3 py-2"
+            placeholder="Title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+          <input
+            className="rounded-xl border px-3 py-2"
+            placeholder="Author"
+            value={author}
+            onChange={(e) => setAuthor(e.target.value)}
+          />
+          <input
+            className="md:col-span-2 rounded-xl border px-3 py-2"
+            placeholder="Cover image URL (optional)"
+            value={coverUrl}
+            onChange={(e) => setCoverUrl(e.target.value)}
+          />
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-600">Status:</span>
+            <select className="rounded-xl border px-2 py-2" value={status} onChange={(e) => setStatus(e.target.value as any)}>
+              <option value="Read">Read</option>
+              <option value="Current">Current</option>
+              <option value="NextUp">NextUp</option>
+            </select>
+          </div>
+          <button className="rounded-xl bg-black text-white px-4 py-2 md:justify-self-end">
+            Add book
+          </button>
+        </form>
+
+        {msg && <div className="mt-3 text-sm text-gray-700">{msg}</div>}
+      </section>
+
+      <section className="mt-6">
+        <h2 className="font-semibold">Books</h2>
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+          {books.map((b) => (
+            <div key={b.id} className="rounded-2xl border p-4">
+              <div className="flex gap-3">
+                <div className="w-16 shrink-0 aspect-[2/3] rounded-xl overflow-hidden border bg-gray-50">
+                  {b.cover_url ? (
+                    <img src={b.cover_url} alt={b.title} className="h-full w-full object-cover" />
+                  ) : null}
+                </div>
+                <div className="flex-1">
+                  <div className="font-medium">{b.title}</div>
+                  <div className="text-sm text-gray-600">{b.author}</div>
+                  <div className="mt-2 text-xs inline-flex rounded-full border px-2 py-1">{b.status}</div>
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2 text-sm">
+                <button
+                  className="rounded-xl border px-3 py-1"
+                  onClick={() => setUniqueStatus(b.id, "Current")}
+                >
+                  Set Current
+                </button>
+                <button
+                  className="rounded-xl border px-3 py-1"
+                  onClick={() => setUniqueStatus(b.id, "NextUp")}
+                >
+                  Set NextUp
+                </button>
+                <button
+                  className="rounded-xl border px-3 py-1"
+                  onClick={() => archiveBook(b.id)}
+                >
+                  Archive
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
