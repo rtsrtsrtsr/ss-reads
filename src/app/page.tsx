@@ -9,6 +9,8 @@ export default function Home() {
         <div className="flex items-center gap-4">
           <AuthStatus />
           <a href="/login" className="text-sm text-gray-600 underline">Login</a>
+		  <a href="/admin" className="text-sm text-gray-600 underline">Admin</a>
+
         </div>
       </header>
 
