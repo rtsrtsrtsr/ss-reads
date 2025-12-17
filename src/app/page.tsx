@@ -13,31 +13,20 @@ type Book = {
   author: string;
   cover_url: string | null;
   status: "Read" | "Current" | "Archived";
-  date_added?: string | null; // optional
+  date_added?: string | null;
 };
 
-type Proposal = {
-  id: string;
-  title: string;
-  author: string;
-  cover_url: string | null;
-  created_at: string;
-  is_active: boolean;
+type ReviewAgg = {
+  count: number;
+  avg: number | null;
 };
 
-type Vote = {
-  id: string;
-  proposal_id: string;
+type ReadingRow = {
   user_id: string;
+  status: string;
 };
 
-function GlowCard({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+function GlowCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <div
       className={[
@@ -78,37 +67,19 @@ function safeDateMs(s?: string | null) {
 export default function HomePage() {
   const [me, setMe] = useState<{ id: string; email: string } | null>(null);
 
-  const [booksRaw, setBooksRaw] = useState<Book[]>([]);
+  const [books, setBooks] = useState<Book[]>([]);
   const [current, setCurrent] = useState<Book | null>(null);
 
-  const [proposals, setProposals] = useState<Proposal[]>([]);
-  const [votes, setVotes] = useState<Vote[]>([]);
-
-  const [msg, setMsg] = useState("");
+  const [reviewAgg, setReviewAgg] = useState<Record<string, ReviewAgg>>({});
   const [sortMode, setSortMode] = useState<SortMode>("newest");
 
-  // Aggregates per book
-  const [reviewAgg, setReviewAgg] = useState<Record<string, { count: number; avg: number | null }>>({});
+  const [inCount, setInCount] = useState(0);
+  const [amIIn, setAmIIn] = useState(false);
 
-  const voteCounts = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const v of votes) map[v.proposal_id] = (map[v.proposal_id] ?? 0) + 1;
-    return map;
-  }, [votes]);
-
-  const topProposals = useMemo(() => {
-    return [...proposals]
-      .sort((a, b) => {
-        const ca = voteCounts[a.id] ?? 0;
-        const cb = voteCounts[b.id] ?? 0;
-        if (cb !== ca) return cb - ca;
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      })
-      .slice(0, 3);
-  }, [proposals, voteCounts]);
+  const [msg, setMsg] = useState("");
 
   const booksSorted = useMemo(() => {
-    const list = [...booksRaw];
+    const list = [...books];
 
     if (sortMode === "most_read") {
       list.sort((a, b) => {
@@ -125,75 +96,14 @@ export default function HomePage() {
         const aa = reviewAgg[a.id]?.avg ?? -1;
         const bb = reviewAgg[b.id]?.avg ?? -1;
         if (bb !== aa) return bb - aa;
-
-        const ca = reviewAgg[a.id]?.count ?? 0;
-        const cb = reviewAgg[b.id]?.count ?? 0;
-        if (cb !== ca) return cb - ca;
-
         return safeDateMs(b.date_added) - safeDateMs(a.date_added);
       });
       return list;
     }
 
-    // newest first (default)
     list.sort((a, b) => safeDateMs(b.date_added) - safeDateMs(a.date_added));
     return list;
-  }, [booksRaw, reviewAgg, sortMode]);
-
-  async function loadBooks(): Promise<Book[]> {
-    // Try with date_added (if it exists)
-    const attempt = await supabase
-      .from("books")
-      .select("id,title,author,cover_url,status,date_added")
-      .in("status", ["Current", "Read"]);
-
-    if (!attempt.error) return (attempt.data ?? []) as any;
-
-    // Fallback without date_added
-    const fallback = await supabase
-      .from("books")
-      .select("id,title,author,cover_url,status")
-      .in("status", ["Current", "Read"]);
-
-    if (fallback.error) throw new Error(fallback.error.message);
-    return (fallback.data ?? []) as any;
-  }
-
-  async function loadReviewAgg(bookIds: string[]) {
-    if (!bookIds.length) {
-      setReviewAgg({});
-      return;
-    }
-
-    const r = await supabase.from("reviews").select("book_id,rating").in("book_id", bookIds);
-
-    if (r.error) {
-      setReviewAgg({});
-      return;
-    }
-
-    const tmp: Record<string, { count: number; sum: number; ratedCount: number }> = {};
-
-    for (const row of (r.data ?? []) as any[]) {
-      const bid = row.book_id as string;
-      if (!tmp[bid]) tmp[bid] = { count: 0, sum: 0, ratedCount: 0 };
-      tmp[bid].count += 1;
-
-      if (typeof row.rating === "number") {
-        tmp[bid].sum += row.rating;
-        tmp[bid].ratedCount += 1;
-      }
-    }
-
-    const out: Record<string, { count: number; avg: number | null }> = {};
-    for (const bid of bookIds) {
-      const m = tmp[bid];
-      if (!m) out[bid] = { count: 0, avg: null };
-      else out[bid] = { count: m.count, avg: m.ratedCount ? m.sum / m.ratedCount : null };
-    }
-
-    setReviewAgg(out);
-  }
+  }, [books, reviewAgg, sortMode]);
 
   async function load() {
     setMsg("");
@@ -203,30 +113,75 @@ export default function HomePage() {
     if (user?.id && user.email) setMe({ id: user.id, email: user.email });
     else setMe(null);
 
-    try {
-      const list = await loadBooks();
-      const cur = list.find((x) => x.status === "Current") ?? null;
-      setCurrent(cur);
-      setBooksRaw(list); // include Current in the bookshelf
-      await loadReviewAgg(list.map((b) => b.id));
-    } catch (e: any) {
-      setMsg(`Could not load books: ${e?.message ?? String(e)}`);
-      return;
+    const b = await supabase
+      .from("books")
+      .select("id,title,author,cover_url,status,date_added")
+      .in("status", ["Current", "Read"]);
+
+    if (b.error) return setMsg(b.error.message);
+
+    const list = (b.data ?? []) as Book[];
+    setBooks(list);
+
+    const cur = list.find((x) => x.status === "Current") ?? null;
+    setCurrent(cur);
+
+    if (list.length) {
+      const r = await supabase.from("reviews").select("book_id,rating").in(
+        "book_id",
+        list.map((x) => x.id)
+      );
+
+      if (!r.error) {
+        const tmp: Record<string, { sum: number; count: number }> = {};
+        for (const row of r.data ?? []) {
+          const bid = row.book_id;
+          if (!tmp[bid]) tmp[bid] = { sum: 0, count: 0 };
+          if (typeof row.rating === "number") {
+            tmp[bid].sum += row.rating;
+            tmp[bid].count += 1;
+          }
+        }
+
+        const agg: Record<string, ReviewAgg> = {};
+        for (const book of list) {
+          const m = tmp[book.id];
+          agg[book.id] = m ? { avg: m.sum / m.count, count: m.count } : { avg: null, count: 0 };
+        }
+        setReviewAgg(agg);
+      }
     }
 
-    const p = await supabase
-      .from("book_proposals")
-      .select("id,title,author,cover_url,created_at,is_active")
-      .eq("is_active", true);
-    if (!p.error) setProposals((p.data ?? []) as any);
+    if (cur && user?.id) {
+      const rs = await supabase
+        .from("ReadingStatus")
+        .select("user_id,status")
+        .eq("book_id", cur.id);
 
-    const v = await supabase.from("book_votes").select("id,proposal_id,user_id");
-    if (!v.error) setVotes((v.data ?? []) as any);
+      if (!rs.error) {
+        const rows = (rs.data ?? []) as ReadingRow[];
+        const ins = rows.filter((r) => r.status === "In");
+        setInCount(ins.length);
+        setAmIIn(ins.some((r) => r.user_id === user.id));
+      }
+    }
   }
 
-  async function signOut() {
-    await supabase.auth.signOut();
-    await load();
+  async function toggleImIn() {
+    if (!me || !current) return;
+
+    const next = amIIn ? "Out" : "In";
+    const up = await supabase.from("ReadingStatus").upsert(
+      {
+        book_id: current.id,
+        user_id: me.id,
+        status: next,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "book_id,user_id" }
+    );
+
+    if (!up.error) load();
   }
 
   useEffect(() => {
@@ -236,212 +191,117 @@ export default function HomePage() {
   return (
     <main className="p-6 max-w-6xl mx-auto">
       {/* Header */}
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <Link href="/" className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-2xl bg-slate-900 border border-slate-800 shadow-[0_0_20px_rgba(34,211,238,0.12)] grid place-items-center">
-            <span className="text-cyan-200">📚</span>
-          </div>
-          <div>
-            <div className="text-2xl font-semibold tracking-tight">SourceSprints Reads</div>
-            <div className="text-sm text-slate-400">cute little internal bookshelf</div>
-          </div>
-        </Link>
-
-        <nav className="text-sm text-slate-300 flex flex-wrap items-center gap-4">
-          <Link className="underline hover:text-white transition" href="/inbox">
-            Inbox
-          </Link>
-          <Link className="underline hover:text-white transition" href="/up-next">
+      <header className="flex items-center justify-between gap-4">
+        <div>
+          <div className="text-2xl font-semibold">SourceSprints Reads</div>
+          <div className="text-sm text-slate-400">internal bookshelf</div>
+        </div>
+        <nav className="flex gap-4 text-sm text-slate-300">
+          <Link href="/up-next" className="underline hover:text-white">
             Up Next
           </Link>
-		  <Link className="underline hover:text-white transition" href="/stats">
-			Stats
-			</Link>
-          <Link className="underline hover:text-white transition" href="/admin">
-            Admin
+          <Link href="/stats" className="underline hover:text-white">
+            Stats
           </Link>
-          {!me ? (
-            <Link className="underline hover:text-white transition" href="/login">
-              Login
-            </Link>
-          ) : (
-            <>
-              <span className="text-slate-400 hidden sm:inline">
-                Logged in as <span className="text-slate-200">{me.email}</span>
-              </span>
-              <button onClick={signOut} className="underline hover:text-white transition">
-                Sign out
-              </button>
-            </>
-          )}
         </nav>
       </header>
 
       {msg && <div className="mt-4 text-sm text-red-400">{msg}</div>}
 
-      {/* Top row */}
-      <section className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* Current */}
+      <section className="mt-8">
         <GlowCard className="p-6">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Pill tone="cyan">■ Current</Pill>
-              <span className="text-slate-400 text-sm">what we’re reading now</span>
-            </div>
-            {current ? (
-              <Link href={`/book/${current.id}`} className="text-sm underline text-slate-300 hover:text-white transition">
+            <Pill tone="cyan">Current</Pill>
+            {current && (
+              <Link href={`/book/${current.id}`} className="underline text-sm">
                 Open →
               </Link>
-            ) : null}
+            )}
           </div>
 
           {!current ? (
-            <div className="mt-6 text-slate-400">No current book set.</div>
+            <div className="mt-4 text-slate-400">No current book.</div>
           ) : (
-            <Link href={`/book/${current.id}`} className="mt-6 flex gap-4 items-center group">
-              <div className="w-20 aspect-[2/3] rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 shadow-[0_0_25px_rgba(0,0,0,0.45)] group-hover:shadow-[0_0_35px_rgba(34,211,238,0.15)] transition">
-                {current.cover_url ? (
-                  <img src={current.cover_url} alt={current.title} className="h-full w-full object-cover" />
-                ) : null}
-              </div>
-
-              <div className="min-w-0">
-                <div className="text-xl font-semibold tracking-tight group-hover:text-white transition">
-                  {current.title}
-                </div>
-                <div className="text-slate-400">{current.author}</div>
-  const curAgg = reviewAgg[current.id] ?? { avg: null as number | null, count: 0 };
-  return (
-    <div className="mt-2 flex items-center gap-2">
-      <Pill tone="cyan">⭐ {curAgg.avg == null ? "—" : curAgg.avg.toFixed(1)}</Pill>
-      <Pill>
-        {curAgg.count} review{curAgg.count === 1 ? "" : "s"}
-      </Pill>
-    </div>
-  );
-                <div className="mt-2 flex items-center gap-2">
-                  <Pill tone="cyan">
-                    ⭐ {reviewAgg[current.id]?.avg != null ? reviewAgg[current.id]!.avg.toFixed(1) : "—"}
-                  </Pill>
-                  <Pill>
-                    {(reviewAgg[current.id]?.count ?? 0)} review{(reviewAgg[current.id]?.count ?? 0) === 1 ? "" : "s"}
-                  </Pill>
-                </div>
-              </div>
-            </Link>
-          )}
-        </GlowCard>
-
-        <GlowCard className="p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Pill tone="cyan">⏭ Up Next</Pill>
-              <span className="text-slate-400 text-sm">top proposals</span>
-            </div>
-            <Link href="/up-next" className="text-sm underline text-slate-300 hover:text-white transition">
-              Vote →
-            </Link>
-          </div>
-
-          {topProposals.length === 0 ? (
-            <div className="mt-6 text-slate-400">No proposals yet. Add one on the Up Next page.</div>
-          ) : (
-            <div className="mt-6 space-y-3">
-              {topProposals.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 shadow-[0_0_25px_rgba(0,0,0,0.35)]"
-                >
-                  <div className="w-12 aspect-[2/3] rounded-xl overflow-hidden border border-slate-800 bg-slate-900">
-                    {p.cover_url ? <img src={p.cover_url} alt={p.title} className="h-full w-full object-cover" /> : null}
+            (() => {
+              const agg = reviewAgg[current.id] ?? { avg: null, count: 0 };
+              return (
+                <div className="mt-6 flex gap-4 items-center">
+                  <div className="w-20 aspect-[2/3] rounded-xl overflow-hidden border border-slate-800">
+                    {current.cover_url && (
+                      <img src={current.cover_url} alt={current.title} className="h-full w-full object-cover" />
+                    )}
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium text-slate-100 truncate">{p.title}</div>
-                    <div className="text-sm text-slate-400 truncate">{p.author}</div>
+
+                  <div className="flex-1">
+                    <div className="text-xl font-semibold">{current.title}</div>
+                    <div className="text-slate-400">{current.author}</div>
+
+                    <div className="mt-2 flex items-center gap-2">
+                      <Pill tone="cyan">⭐ {agg.avg == null ? "—" : agg.avg.toFixed(1)}</Pill>
+                      <Pill>{agg.count} reviews</Pill>
+                      <Pill>👥 {inCount} in</Pill>
+                    </div>
                   </div>
-                  <Pill tone="cyan">{voteCounts[p.id] ?? 0} votes</Pill>
+
+                  {me && (
+                    <button
+                      onClick={toggleImIn}
+                      className={[
+                        "rounded-xl border px-3 py-1.5 transition",
+                        amIIn
+                          ? "bg-slate-100 text-slate-950"
+                          : "bg-slate-950 text-slate-100 border-cyan-500/40",
+                      ].join(" ")}
+                    >
+                      {amIIn ? "✓ You're in" : "I'm in"}
+                    </button>
+                  )}
                 </div>
-              ))}
-            </div>
+              );
+            })()
           )}
         </GlowCard>
       </section>
 
       {/* Bookshelf */}
       <section className="mt-10">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-semibold tracking-tight flex items-center gap-2">
-              <span className="text-cyan-200">▦</span> Bookshelf
-            </h2>
-            <div className="text-sm text-slate-400">current + past reads</div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-400">Sort:</span>
-            <select
-              className="rounded-xl border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2"
-              value={sortMode}
-              onChange={(e) => setSortMode(e.target.value as SortMode)}
-            >
-              <option value="newest">Newest First</option>
-              <option value="most_read">Most Read</option>
-              <option value="highest_rated">Highest Rated</option>
-            </select>
-          </div>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Bookshelf</h2>
+          <select
+            className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2"
+            value={sortMode}
+            onChange={(e) => setSortMode(e.target.value as SortMode)}
+          >
+            <option value="newest">Newest First</option>
+            <option value="most_read">Most Read</option>
+            <option value="highest_rated">Highest Rated</option>
+          </select>
         </div>
 
         <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {booksSorted.map((b) => {
-            const agg = reviewAgg[b.id] ?? { count: 0, avg: null };
-
+            const agg = reviewAgg[b.id] ?? { avg: null, count: 0 };
             return (
               <Link key={b.id} href={`/book/${b.id}`} className="group">
-                <div
-                  className={[
-                    "rounded-3xl border border-slate-800 bg-slate-900/60 backdrop-blur p-3",
-                    "shadow-[0_0_30px_rgba(0,0,0,0.35)] hover:shadow-[0_0_45px_rgba(34,211,238,0.18)] transition",
-                  ].join(" ")}
-                >
-                  <div className="relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 aspect-[2/3]">
-                    {b.cover_url ? (
-                      <img
-                        src={b.cover_url}
-                        alt={b.title}
-                        className="h-full w-full object-cover group-hover:scale-[1.02] transition"
-                      />
-                    ) : (
-                      <div className="h-full w-full grid place-items-center text-xs text-slate-500">No cover</div>
+                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-3 shadow-[0_0_30px_rgba(0,0,0,0.35)]">
+                  <div className="aspect-[2/3] rounded-xl overflow-hidden border border-slate-800">
+                    {b.cover_url && (
+                      <img src={b.cover_url} alt={b.title} className="h-full w-full object-cover" />
                     )}
-
-                    {b.status === "Current" ? (
-                      <div className="absolute top-2 left-2">
-                        <Pill tone="cyan">Current</Pill>
-                      </div>
-                    ) : null}
-
-                    <div className="absolute left-2 right-2 bottom-2 flex gap-2">
-                      <span className="rounded-full border border-slate-700 bg-slate-950/90 px-2 py-0.5 text-xs text-slate-200">
-                        ⭐ {agg.avg != null ? agg.avg.toFixed(1) : "—"}
-                      </span>
-                      <span className="rounded-full border border-slate-700 bg-slate-950/90 px-2 py-0.5 text-xs text-slate-200">
-                        {agg.count} review{agg.count === 1 ? "" : "s"}
-                      </span>
-                    </div>
                   </div>
-
                   <div className="mt-3">
-                    <div className="font-medium text-slate-100 truncate group-hover:text-white transition">
-                      {b.title}
-                    </div>
+                    <div className="font-medium truncate">{b.title}</div>
                     <div className="text-sm text-slate-400 truncate">{b.author}</div>
+                    <div className="mt-1 text-xs text-slate-300">
+                      ⭐ {agg.avg == null ? "—" : agg.avg.toFixed(1)} · {agg.count}
+                    </div>
                   </div>
                 </div>
               </Link>
             );
           })}
         </div>
-
-        {booksSorted.length === 0 ? <div className="mt-5 text-slate-400">No books yet.</div> : null}
       </section>
     </main>
   );
