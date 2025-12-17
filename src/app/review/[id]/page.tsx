@@ -7,25 +7,61 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import MentionInput from "@/app/ui/MentionInput";
 
-
 type ReactionType = "Like" | "Helpful" | "Funny";
+
+type Profile = {
+  id: string;
+  email: string;
+  display_name: string;
+};
+
+function highlightMentions(text: string) {
+  // Splits into tokens, wraps @mentions with a pill
+  const parts = text.split(/(@[\w-]+)/g);
+  return (
+    <>
+      {parts.map((p, i) => {
+        if (/^@[\w-]+$/.test(p)) {
+          return (
+            <span
+              key={i}
+              className="inline-flex items-center rounded-full border px-2 py-0.5 text-sm bg-gray-50"
+            >
+              {p}
+            </span>
+          );
+        }
+        return <span key={i}>{p}</span>;
+      })}
+    </>
+  );
+}
 
 export default function ReviewDetailPage() {
   const { id } = useParams<{ id: string }>();
 
+  const [me, setMe] = useState<{ id: string; email: string } | null>(null);
+
   const [review, setReview] = useState<any>(null);
   const [book, setBook] = useState<any>(null);
-  const [author, setAuthor] = useState<any>(null);
 
   const [comments, setComments] = useState<any[]>([]);
   const [reactions, setReactions] = useState<any[]>([]);
-  const [profiles, setProfiles] = useState<any[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
 
   const [commentBody, setCommentBody] = useState("");
   const [msg, setMsg] = useState("");
 
   async function load() {
     setMsg("");
+
+    const { data: sess } = await supabase.auth.getSession();
+    const user = sess.session?.user;
+    if (!user?.id || !user.email) {
+      setMsg("Please log in.");
+      return;
+    }
+    setMe({ id: user.id, email: user.email });
 
     const r = await supabase
       .from("reviews")
@@ -37,7 +73,6 @@ export default function ReviewDetailPage() {
       setMsg(r.error.message);
       return;
     }
-
     setReview(r.data);
 
     const b = await supabase.from("books").select("*").eq("id", r.data.book_id).single();
@@ -59,7 +94,7 @@ export default function ReviewDetailPage() {
     if (!rx.error) setReactions(rx.data ?? []);
 
     const p = await supabase.from("profiles").select("id,email,display_name");
-    if (!p.error) setProfiles(p.data ?? []);
+    if (!p.error) setProfiles((p.data ?? []) as any);
   }
 
   useEffect(() => {
@@ -73,28 +108,22 @@ export default function ReviewDetailPage() {
     return c;
   }, [reactions]);
 
-  const [myUserId, setMyUserId] = useState<string | null>(null);
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setMyUserId(data.session?.user.id ?? null));
-  }, []);
-
   function iReacted(type: ReactionType) {
-    return !!reactions.find((r) => r.user_id === myUserId && r.type === type);
+    if (!me) return false;
+    return !!reactions.find((r) => r.user_id === me.id && r.type === type);
   }
 
   async function toggleReaction(type: ReactionType) {
     setMsg("");
-    const { data: sess } = await supabase.auth.getSession();
-    const uid = sess.session?.user.id;
-    if (!uid) return;
+    if (!me) return;
 
-    const existing = reactions.find((r) => r.user_id === uid && r.type === type);
+    const existing = reactions.find((r) => r.user_id === me.id && r.type === type);
     if (existing) {
       const del = await supabase.from("review_reactions").delete().eq("id", existing.id);
       if (del.error) setMsg(del.error.message);
       else load();
     } else {
-      const ins = await supabase.from("review_reactions").insert({ review_id: id, user_id: uid, type });
+      const ins = await supabase.from("review_reactions").insert({ review_id: id, user_id: me.id, type });
       if (ins.error) setMsg(ins.error.message);
       else load();
     }
@@ -102,18 +131,17 @@ export default function ReviewDetailPage() {
 
   async function addComment() {
     setMsg("");
-    const { data: sess } = await supabase.auth.getSession();
-    const uid = sess.session?.user.id;
-    if (!uid) return;
+    if (!me) return;
 
-    if (!commentBody.trim()) {
+    const body = commentBody.trim();
+    if (!body) {
       setMsg("Write a comment first.");
       return;
     }
 
     const inserted = await supabase
       .from("review_comments")
-      .insert({ review_id: id, user_id: uid, body: commentBody.trim() })
+      .insert({ review_id: id, user_id: me.id, body })
       .select("id")
       .single();
 
@@ -122,59 +150,77 @@ export default function ReviewDetailPage() {
       return;
     }
 
-	// Extract @mentions from comment body
-	const mentionedNames = Array.from(
-	  new Set(
-		commentBody.match(/@([\w-]+)/g)?.map((m) => m.slice(1).toLowerCase()) ?? []
-	  )
-	);
+    // Extract @mentions by display_name and write to comment_mentions
+    const mentionedNames = Array.from(
+      new Set(body.match(/@([\w-]+)/g)?.map((m) => m.slice(1).toLowerCase()) ?? [])
+    );
 
-	if (mentionedNames.length) {
-	  const targets = profiles.filter((p) =>
-		mentionedNames.includes(p.display_name.toLowerCase())
-	  );
+    if (mentionedNames.length) {
+      const targets = profiles.filter((p) =>
+        mentionedNames.includes(p.display_name.toLowerCase())
+      );
 
-	  for (const t of targets) {
-		await supabase.from("comment_mentions").insert({
-		  comment_id: inserted.data.id,
-		  mentioned_user_id: t.id,
-		});
-	  }
-	}
-
+      for (const t of targets) {
+        await supabase.from("comment_mentions").insert({
+          comment_id: inserted.data.id,
+          mentioned_user_id: t.id,
+        });
+      }
+    }
 
     setCommentBody("");
     load();
   }
 
-  if (!review || !book) return <main className="p-6">Loading…</main>;
+  if (!review || !book) {
+    return (
+      <main className="p-6 max-w-3xl mx-auto bg-white text-gray-900 min-h-screen">
+        <div className="text-gray-600">Loading…</div>
+        {msg && <div className="mt-3 text-sm text-red-600">{msg}</div>}
+      </main>
+    );
+  }
 
   return (
-    <main className="p-6 max-w-3xl mx-auto">
-      <Link href={`/book/${book.id}`} className="text-sm underline text-gray-600">← Back to book</Link>
+    <main className="p-6 max-w-3xl mx-auto bg-white text-gray-900 min-h-screen">
+      <Link href={`/book/${book.id}`} className="text-sm underline text-gray-600">
+        ← Back to book
+      </Link>
 
-      <div className="mt-4 flex gap-4">
+      <div className="mt-5 flex gap-4">
         <div className="w-24 aspect-[2/3] rounded-2xl overflow-hidden border bg-gray-50">
-          {book.cover_url ? <img src={book.cover_url} alt={book.title} className="h-full w-full object-cover" /> : null}
+          {book.cover_url ? (
+            <img src={book.cover_url} alt={book.title} className="h-full w-full object-cover" />
+          ) : null}
         </div>
+
         <div className="flex-1">
           <div className="text-sm text-gray-600">{book.author}</div>
-          <h1 className="text-2xl font-semibold">{book.title}</h1>
-          <div className="mt-2 text-sm text-gray-700">
-            Review by <span className="font-medium">{review.profiles?.display_name ?? "someone"}</span>
-            {review.rating ? <span className="ml-2">{ "⭐".repeat(review.rating) }</span> : null}
+          <h1 className="text-3xl font-semibold">{book.title}</h1>
+
+          <div className="mt-2 text-sm text-gray-700 flex items-center gap-3">
+            <span>
+              Review by{" "}
+              <span className="font-medium">{review.profiles?.display_name ?? "someone"}</span>
+            </span>
+            {review.rating ? <span className="text-yellow-600">{Array(review.rating).fill("★").join("")}</span> : null}
           </div>
         </div>
       </div>
 
-      <section className="mt-6 rounded-2xl border p-4">
-        <div className="text-gray-900 whitespace-pre-wrap">{review.thoughts}</div>
-        <div className="mt-4 flex gap-2 text-sm">
-          {(["Like","Helpful","Funny"] as const).map((t) => (
+      <section className="mt-6 rounded-2xl border p-4 bg-white">
+        <div className="text-gray-900 whitespace-pre-wrap leading-relaxed">
+          {highlightMentions(review.thoughts ?? "")}
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2 text-sm">
+          {(["Like", "Helpful", "Funny"] as const).map((t) => (
             <button
               key={t}
               onClick={() => toggleReaction(t)}
-              className={`rounded-xl border px-3 py-1 ${iReacted(t) ? "bg-black text-white" : ""}`}
+              className={`rounded-xl border px-3 py-1 bg-white hover:shadow-sm transition ${
+                iReacted(t) ? "bg-black text-white border-black" : "text-gray-900"
+              }`}
             >
               {t === "Like" ? "👍" : t === "Helpful" ? "✅" : "😂"} {t} · {counts[t]}
             </button>
@@ -182,42 +228,44 @@ export default function ReviewDetailPage() {
         </div>
       </section>
 
-      <section className="mt-6">
-        <h2 className="font-semibold">Comments</h2>
+      <section className="mt-8">
+        <h2 className="text-xl font-semibold">Comments</h2>
 
-        <div className="mt-3 space-y-3">
+        <div className="mt-4 space-y-3">
           {comments.map((c) => (
-            <div key={c.id} className="rounded-2xl border p-4">
+            <div key={c.id} className="rounded-2xl border p-4 bg-white">
               <div className="text-sm text-gray-600">
                 <span className="font-medium text-gray-900">{c.profiles?.display_name ?? "someone"}</span>
               </div>
-              <div className="mt-2 whitespace-pre-wrap">{c.body}</div>
+              <div className="mt-2 whitespace-pre-wrap leading-relaxed">
+                {highlightMentions(c.body ?? "")}
+              </div>
             </div>
           ))}
         </div>
 
-        <div className="mt-4 rounded-2xl border p-4">
+        <div className="mt-5 rounded-2xl border p-4 bg-white">
           <div className="font-medium">Add a comment</div>
-          <textarea
-            className="mt-2 w-full rounded-xl border p-3"
-            rows={3}
-            placeholder="Reply…"
-            value={commentBody}
-            onChange={(e) => setCommentBody(e.target.value)}
-          />
-			<MentionInput
-			  value={commentBody}
-			  onChange={setCommentBody}
-			  profiles={profiles}
-			  placeholder="Reply… use @ to mention"
-			/>
 
-          <button onClick={addComment} className="mt-3 rounded-xl bg-black text-white px-4 py-2">
+          {/* Single comment box (autocomplete mentions) */}
+          <div className="mt-3">
+            <MentionInput
+              value={commentBody}
+              onChange={setCommentBody}
+              profiles={profiles}
+              placeholder="Reply… type @ to mention"
+            />
+          </div>
+
+          <button
+            onClick={addComment}
+            className="mt-3 rounded-xl bg-black text-white px-4 py-2"
+          >
             Post comment
           </button>
-        </div>
 
-        {msg && <div className="mt-3 text-sm text-red-600">{msg}</div>}
+          {msg && <div className="mt-3 text-sm text-red-600">{msg}</div>}
+        </div>
       </section>
     </main>
   );
