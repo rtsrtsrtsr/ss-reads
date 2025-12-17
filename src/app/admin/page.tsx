@@ -206,6 +206,7 @@ export default function AdminPage() {
   }
 
   return (
+	<>
 	<Header />
     <main className="p-6 max-w-6xl mx-auto">
 
@@ -395,5 +396,6 @@ export default function AdminPage() {
         </div>
       </section>
     </main>
+	</>
   );
 }

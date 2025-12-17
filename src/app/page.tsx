@@ -230,6 +230,7 @@ export default function HomePage() {
   }, []);
 
   return (
+	<>
 	<Header />
     <main className="p-6 max-w-6xl mx-auto">
 
@@ -368,5 +369,6 @@ export default function HomePage() {
         </div>
       </section>
     </main>
+	</>
   );
 }
